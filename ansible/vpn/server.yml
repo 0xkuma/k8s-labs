@@ -1,0 +1,261 @@
+- name: OpenVPN Server
+  hosts: all
+  become: true
+  tasks:
+    # - name: Install necessary packages
+    #   ansible.builtin.apt:
+    #     name:
+    #       - openvpn
+    #       - easy-rsa
+    #       - iptables
+    #       - openssl
+    #       - wget
+    #       - ca-certificates
+    #       - curl
+    #     update_cache: true
+    #     state: present
+
+    # - name: Create OpenVPN CA directory
+    #   ansible.builtin.file:
+    #     path: '~/openvpn-ca'
+    #     state: directory
+    #     owner: '{{ ansible_user }}'
+    #     mode: '0700'
+
+    # - name: Copy easy-rsa files
+    #   ansible.builtin.copy:
+    #     src: '{{ item }}'
+    #     dest: '~/openvpn-ca/'
+    #     owner: '{{ ansible_user }}'
+    #     mode: '0700'
+    #     remote_src: true
+    #   with_items:
+    #     - /usr/share/easy-rsa/easyrsa
+    #     - /usr/share/easy-rsa/openssl-easyrsa.cnf
+    #     - /usr/share/easy-rsa/x509-types
+
+    # - name: Setup vars file for easy-rsa
+    #   ansible.builtin.copy:
+    #     content: |
+    #       set_var EASYRSA_ALGO ec
+    #       set_var EASYRSA_DIGEST sha512
+    #       set_var EASYRSA_CURVE secp521r1
+    #     dest: '~/openvpn-ca/vars'
+    #     owner: '{{ ansible_user }}'
+    #     mode: '0700'
+
+    # - name: Initiate pki directory and build certificates
+    #   ansible.builtin.shell: |
+    #     cd ~/openvpn-ca
+    #     ./easyrsa init-pki
+    #     ./easyrsa --batch build-ca nopass
+    #     ./easyrsa build-server-full server nopass
+    #     ./easyrsa build-client-full client1 nopass
+    #     openssl dhparam -out dh2048.pem 2048
+    #     openvpn --genkey --secret ta.key
+    #   register: output
+    #   changed_when: output.stdout != ''
+
+    # - name: Copy certificates to /etc/openvpn/server
+    #   ansible.builtin.copy:
+    #     src: '{{ item }}'
+    #     dest: '/etc/openvpn/server/'
+    #     owner: '{{ ansible_user }}'
+    #     mode: '0700'
+    #     remote_src: true
+    #   with_items:
+    #     - ~/openvpn-ca/pki/ca.crt
+    #     - ~/openvpn-ca/pki/private/ca.key
+    #     - ~/openvpn-ca/pki/issued/server.crt
+    #     - ~/openvpn-ca/pki/private/server.key
+    #     - ~/openvpn-ca/dh2048.pem
+    #     - ~/openvpn-ca/ta.key
+
+    # - name: Enable IP forwarding
+    #   ansible.posix.sysctl:
+    #     name: net.ipv4.ip_forward
+    #     value: 1
+    #     state: present
+    #     sysctl_set: true
+    #     reload: true
+
+    # - name: Get NIC
+    #   ansible.builtin.shell:
+    #     cmd: |
+    #       set -o pipefail #
+    #       ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1
+    #     executable: /bin/bash
+    #   register: nic
+    #   changed_when: nic.stdout != ''
+
+    # - name: Configure iptables rules
+    #   ansible.builtin.iptables:
+    #     table: nat
+    #     chain: POSTROUTING
+    #     rule_num: 1
+    #     source: 10.8.0.0/24
+    #     out_interface: '{{ nic.stdout }}'
+    #     jump: MASQUERADE
+
+    # - name: Allow incoming traffic on tun0
+    #   ansible.builtin.iptables:
+    #     chain: INPUT
+    #     rule_num: 1
+    #     in_interface: tun0
+    #     jump: ACCEPT
+
+    # - name: Allow traffic from NIC to tun0
+    #   ansible.builtin.iptables:
+    #     chain: FORWARD
+    #     rule_num: 1
+    #     in_interface: '{{ nic.stdout }}'
+    #     out_interface: tun0
+    #     jump: ACCEPT
+
+    # - name: Allow traffic from tun0 to NIC
+    #   ansible.builtin.iptables:
+    #     chain: FORWARD
+    #     rule_num: 1
+    #     in_interface: tun0
+    #     out_interface: '{{ nic.stdout }}'
+    #     jump: ACCEPT
+
+    # - name: Allow incoming UDP traffic on port 1194
+    #   ansible.builtin.iptables:
+    #     chain: INPUT
+    #     rule_num: 1
+    #     in_interface: '{{ nic.stdout }}'
+    #     protocol: udp
+    #     destination_ports: 1194
+    #     jump: ACCEPT
+
+    # - name: Setup openvpn server.conf
+    #   ansible.builtin.copy:
+    #     content: |
+    #       port 1194
+    #       proto udp
+    #       dev tun
+    #       ca ca.crt
+    #       cert server.crt
+    #       key server.key
+    #       dh dh2048.pem
+    #       server 10.8.0.0 255.255.255.0
+    #       ifconfig-pool-persist /var/log/openvpn/ipp.txt
+    #       push "redirect-gateway def1 bypass-dhcp"
+    #       push "dhcp-option DNS 1.0.0.1"
+    #       push "dhcp-option DNS 1.1.1.1"
+    #       keepalive 10 120
+    #       tls-crypt ta.key
+    #       cipher AES-256-GCM
+    #       auth SHA512
+    #       user nobody
+    #       group nogroup
+    #       persist-key
+    #       persist-tun
+    #       status /var/log/openvpn/openvpn-status.log
+    #       verb 3
+    #     dest: '/etc/openvpn/server/server.conf'
+    #     owner: '{{ ansible_user }}'
+    #     mode: '0700'
+
+    # - name: Check if 'nobody' group exists
+    #   ansible.builtin.getent:
+    #     database: group
+    #     key: nobody
+    #     fail_key: false
+    #   register: nobody_group
+
+    # - name: Create 'nobody' group
+    #   ansible.builtin.group:
+    #     name: nobody
+    #     system: true
+    #   when: nobody_group == {}
+
+    # - name: Start and enable openvpn service
+    #   ansible.builtin.service:
+    #     name: openvpn-server@server.service
+    #     state: started
+    #     enabled: true
+
+    # - name: Copy certificates to /etc/openvpn/client
+    #   ansible.builtin.copy:
+    #     src: '{{ item }}'
+    #     dest: '/etc/openvpn/client/'
+    #     owner: '{{ ansible_user }}'
+    #     mode: '0700'
+    #     remote_src: true
+    #   with_items:
+    #     - ~/openvpn-ca/pki/issued/client1.crt
+    #     - ~/openvpn-ca/pki/private/client1.key
+
+    - name: Get the public IP address
+      ansible.builtin.uri:
+        url: https://api.ipify.org
+        return_content: true
+      register: public_ip
+
+    - name: Setup OpenVPN client1.ovpn
+      ansible.builtin.copy:
+        content: |
+          client
+          dev tun
+          proto udp
+          remote {{ public_ip.content }} 1194
+          resolv-retry infinite
+          nobind
+          user nobody
+          group nogroup
+          persist-key
+          persist-tun
+          remote-cert-tls server
+          cipher AES-256-GCM
+          auth SHA512
+          key-direction 1
+          verb 3
+        dest: '/etc/openvpn/client/client1.ovpn'
+        owner: '{{ ansible_user }}'
+        mode: '0700'
+        remote_src: true
+
+    - name: Add ca to client1.ovpn
+      ansible.builtin.shell:
+        cmd: |
+          echo '<ca>' >> /etc/openvpn/client/client1.ovpn
+          cat ~/openvpn-ca/pki/ca.crt >> /etc/openvpn/client/client1.ovpn
+          echo '</ca>' >> /etc/openvpn/client/client1.ovpn
+      register: output
+      changed_when: output.stdout != ''
+
+    - name: Add cert to client1.ovpn
+      ansible.builtin.shell:
+        cmd: |
+          echo '<cert>' >> /etc/openvpn/client/client1.ovpn
+          awk '/BEGIN/,/END/' ~/openvpn-ca/pki/issued/client1.crt >> /etc/openvpn/client/client1.ovpn
+          echo '</cert>' >> /etc/openvpn/client/client1.ovpn
+      register: output
+      changed_when: output.stdout != ''
+
+    - name: Add key to client1.ovpn
+      ansible.builtin.shell:
+        cmd: |
+          echo '<key>' >> /etc/openvpn/client/client1.ovpn
+          cat ~/openvpn-ca/pki/private/client1.key >> /etc/openvpn/client/client1.ovpn
+          echo '</key>' >> /etc/openvpn/client/client1.ovpn
+      register: output
+      changed_when: output.stdout != ''
+
+    - name: Add tls-crypt to client1.ovpn
+      ansible.builtin.shell:
+        cmd: |
+          echo '<tls-crypt>' >> /etc/openvpn/client/client1.ovpn
+          cat ~/openvpn-ca/ta.key >> /etc/openvpn/client/client1.ovpn
+          echo '</tls-crypt>' >> /etc/openvpn/client/client1.ovpn
+      register: output
+      changed_when: output.stdout != ''
+
+    - name: Copy client1.ovpn to local machine
+      ansible.builtin.fetch:
+        src: '/etc/openvpn/client/client1.ovpn'
+        dest: '../../vpn/client1.ovpn'
+        flat: true
+        fail_on_missing: false

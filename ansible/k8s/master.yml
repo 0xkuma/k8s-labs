@@ -1,0 +1,132 @@
+---
+- name: Install Kubernetes with CRI-O
+  hosts: all
+  become: true
+  vars:
+    ansible_ssh_common_args: "-o ProxyCommand='ssh -i {{ remote_key }} -W %h:%p {{ remote_user }}@{{ bastion_host }}'"
+  tasks:
+    - name: Set hostname
+      ansible.builtin.hostname:
+        name: '{{ hostname }}'
+      delegate_to: '{{ remote_host }}'
+
+    - name: Update /etc/hosts file
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '.*old-hostname.*'
+        line: '127.0.0.1   {{ hostname }}'
+        backrefs: true
+      delegate_to: '{{ remote_host }}'
+
+    - name: Update and Install dependencies
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - jq
+        update_cache: true
+        state: present
+      delegate_to: '{{ remote_host }}'
+
+    - name: Add Kubernetes apt key
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail #
+          curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key |
+          gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        executable: /bin/bash
+      register: output
+      changed_when: output.stdout != ''
+      delegate_to: '{{ remote_host }}'
+
+    - name: Add Kubernetes apt repository
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail #
+          echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /' |
+          tee /etc/apt/sources.list.d/kubernetes.list
+        executable: /bin/bash
+      register: output
+      changed_when: output.stdout != ''
+      delegate_to: '{{ remote_host }}'
+
+    - name: Handle Kubernetes packages
+      delegate_to: '{{ remote_host }}'
+      block:
+        - name: Update apt cache
+          ansible.builtin.apt:
+            update_cache: true
+
+        - name: Install Kubernetes packages
+          ansible.builtin.apt:
+            name: ['kubelet', 'kubeadm', 'kubectl']
+            state: present
+
+        - name: Hold Kubernetes packages
+          ansible.builtin.dpkg_selections:
+            name: '{{ item }}'
+            selection: hold
+          loop: ['kubelet', 'kubeadm', 'kubectl']
+
+    - name: Disable swap
+      ansible.builtin.command: >
+        sh -c "swapoff -a && sed -i '/ swap / s/^/#/' /etc/fstab"
+      changed_when: true
+      delegate_to: '{{ remote_host }}'
+
+    - name: Install CRI-O
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/cri-o/cri-o/main/scripts/get
+        dest: /tmp/get
+        mode: '0755'
+      delegate_to: '{{ remote_host }}'
+
+    - name: Run CRI-O installation script
+      ansible.builtin.command: /tmp/get
+      delegate_to: '{{ remote_host }}'
+      changed_when: true
+
+    - name: Start CRI-O service
+      ansible.builtin.systemd:
+        name: crio
+        state: started
+      delegate_to: '{{ remote_host }}'
+
+    - name: Fetch modprobe configuration
+      ansible.builtin.command: modprobe br_netfilter
+      register: output
+      changed_when: output.stdout != ''
+      delegate_to: '{{ remote_host }}'
+
+    - name: Enable IP forwarding
+      ansible.posix.sysctl:
+        name: net.ipv4.ip_forward
+        value: 1
+        state: present
+        sysctl_set: true
+        reload: true
+      delegate_to: '{{ remote_host }}'
+
+    - name: Initialize kubeadm
+      ansible.builtin.command: kubeadm init
+      delegate_to: '{{ remote_host }}'
+      changed_when: true
+
+    - name: Create kube directory
+      ansible.builtin.file:
+        path: '$HOME/.kube'
+        state: directory
+        owner: '{{ ansible_user }}'
+        mode: '0700'
+      delegate_to: '{{ remote_host }}'
+
+    - name: Copy Kubernetes config file
+      ansible.builtin.copy:
+        src: /etc/kubernetes/admin.conf
+        dest: '$HOME/.kube/config'
+        owner: root
+        group: root
+        mode: '0644'
+        remote_src: true
+      delegate_to: '{{ remote_host }}'

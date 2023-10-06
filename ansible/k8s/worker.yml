@@ -1,0 +1,99 @@
+- name: Install Kubernetes worker node
+  hosts: all
+  become: true
+  vars:
+    ansible_ssh_common_args: "-o ProxyCommand='ssh -i {{ remote_key }} -W %h:%p {{ remote_user }}@{{ bastion_host }}'"
+  tasks:
+    - name: Set hostname
+      hostname:
+        name: '{{ hostname }}'
+      delegate_to: '{{ remote_host }}'
+
+    - name: Update /etc/hosts file
+      lineinfile:
+        path: /etc/hosts
+        regexp: '.*old-hostname.*'
+        line: '127.0.0.1   {{ hostname }}'
+        backrefs: yes
+      delegate_to: '{{ remote_host }}'
+
+    - name: Update and Install dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - jq
+        update_cache: yes
+        state: present
+      delegate_to: '{{ remote_host }}'
+
+    - name: Add Kubernetes apt key
+      shell: |
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      delegate_to: '{{ remote_host }}'
+
+    - name: Add Kubernetes apt repository
+      apt_repository:
+        filename: kubernetes
+        repo: deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /
+        state: present
+      delegate_to: '{{ remote_host }}'
+
+    - name: Handle Kubernetes packages
+      block:
+        - name: Update apt cache
+          apt:
+            update_cache: yes
+
+        - name: Install Kubernetes packages
+          apt:
+            name: '{{ item }}'
+            state: present
+          loop: ['kubelet', 'kubeadm', 'kubectl']
+
+        - name: Hold Kubernetes packages
+          ansible.builtin.dpkg_selections:
+            name: '{{ item }}'
+            selection: hold
+          loop: ['kubelet', 'kubeadm', 'kubectl']
+      delegate_to: '{{ remote_host }}'
+
+    - name: Disable swap
+      shell: |
+        swapoff -a && sed -i '/ swap / s/^/#/' /etc/fstab
+      delegate_to: '{{ remote_host }}'
+
+    - name: Install CRI-O
+      shell: |
+        curl https://raw.githubusercontent.com/cri-o/cri-o/main/scripts/get | bash
+      delegate_to: '{{ remote_host }}'
+
+    - name: start CRI-O service
+      systemd:
+        name: crio
+        state: started
+      delegate_to: '{{ remote_host }}'
+
+    - name: Fetch modprobe configuration
+      command: modprobe br_netfilter
+      delegate_to: '{{ remote_host }}'
+
+    - name: Enable IP forwarding
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: 1
+        state: present
+        sysctl_set: yes
+        reload: yes
+      delegate_to: '{{ remote_host }}'
+
+    - name: Get the kubeadm join command
+      shell: |
+        sudo kubeadm token generate | kubeadm token create $1 --print-join-command
+      register: join_command
+      delegate_to: '{{ remote_master_host }}'
+
+    - name: Join worker nodes to the cluster
+      shell: '{{ join_command.stdout }}'
+      delegate_to: '{{ remote_host }}'
