@@ -45,24 +45,6 @@ module "bastion" {
   )
 }
 
-resource "time_sleep" "main" {
-  triggers = {
-    bastion_ip = module.bastion.public_ips[0]
-  }
-  create_duration = "30s"
-  depends_on      = [module.bastion]
-}
-
-resource "null_resource" "main" {
-  triggers = {
-    bastion_ip = module.bastion.public_ips[0]
-  }
-  provisioner "local-exec" {
-    command = "ssh-keyscan -H ${module.bastion.public_ips[0]} >> ~/.ssh/known_hosts"
-  }
-  depends_on = [time_sleep.main]
-}
-
 module "master" {
   source = "./modules/ec2"
 
@@ -90,7 +72,7 @@ module "master" {
       }
     }
   )
-  depends_on = [null_resource.main]
+  depends_on = [module.bastion]
 }
 
 module "worker" {
@@ -120,5 +102,5 @@ module "worker" {
       }
     }
   )
-  depends_on = [null_resource.main]
+  depends_on = [module.bastion]
 }
