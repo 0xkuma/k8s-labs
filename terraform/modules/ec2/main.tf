@@ -3,7 +3,7 @@ resource "aws_instance" "main" {
   ami                         = var.node.ami
   instance_type               = var.node.instance_type
   key_name                    = var.node.key_name
-  subnet_id                   = var.node.subnet_id[(length(var.node.subnet_id) % count.index) - 1]
+  subnet_id                   = var.node.subnet_id[(count.index % length(var.node.subnet_id))]
   vpc_security_group_ids      = var.node.vpc_security_group_ids
   associate_public_ip_address = var.node.associate_public_ip_address
   iam_instance_profile        = var.node.iam_instance_profile
@@ -24,9 +24,9 @@ resource "aws_instance" "main" {
 }
 
 resource "time_sleep" "main" {
-  count = var.node.name == "bastion" ? 1 : 0
+  count = var.node.num_instances
   triggers = {
-    bastion_ip = aws_instance.main.*.public_ip[count.index]
+    private_ip = aws_instance.main.*.private_ip[count.index]
   }
   create_duration = "30s"
   depends_on      = [aws_instance.main]
@@ -68,4 +68,12 @@ resource "null_resource" "ansible" {
     }
     command = var.node.ansible.playbook == "" ? "echo 'No playbook to run'" : var.node.name == "master" ? "${local.bCommand} --extra-vars='bastion_host=${var.node.ansible.bastion.ip} remote_host=${aws_instance.main.*.private_ip[count.index]} remote_user=${var.node.ansible.remote.username} remote_key=${var.node.ansible.remote.private_key} hostname=${var.node.name}${count.index + 1}'" : var.node.name == "worker" ? "${local.bCommand}  --extra-vars='bastion_host=${var.node.ansible.bastion.ip} remote_host=${aws_instance.main.*.private_ip[count.index]} remote_user=${var.node.ansible.remote.username} remote_key=${var.node.ansible.remote.private_key} remote_master_host=${var.node.ansible.remote.remote_master_host} hostname=${var.node.name}${count.index + 1}'" : local.bCommand
   }
+  depends_on = [time_sleep.main]
+}
+
+resource "aws_lb_target_group_attachment" "main" {
+  count            = var.node.name != "bastion" ? var.node.num_instances : 0
+  target_group_arn = var.target_group_arn
+  target_id        = aws_instance.main.*.id[count.index]
+  port             = 9092
 }

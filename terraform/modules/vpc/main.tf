@@ -116,9 +116,10 @@ resource "aws_nat_gateway" "main" {
 }
 
 resource "aws_subnet" "public" {
-  for_each   = toset(var.subnets.public)
-  vpc_id     = aws_vpc.main.id
-  cidr_block = each.value
+  for_each          = toset(var.subnets.public)
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = each.value
+  availability_zone = data.aws_availability_zones.main.names[index(var.subnets.public, each.key)]
 
   tags = merge(
     local.bTags,
@@ -126,12 +127,14 @@ resource "aws_subnet" "public" {
       Name = "${local.pTags}-public-${index(var.subnets.public, each.key)}"
     }
   )
+  depends_on = [data.aws_availability_zones.main]
 }
 
 resource "aws_subnet" "private" {
-  for_each   = toset(var.subnets.private)
-  vpc_id     = aws_vpc.main.id
-  cidr_block = each.value
+  for_each          = toset(var.subnets.private)
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = each.value
+  availability_zone = data.aws_availability_zones.main.names[index(var.subnets.private, each.key)]
 
   tags = merge(
     local.bTags,
@@ -139,6 +142,7 @@ resource "aws_subnet" "private" {
       Name = "${local.pTags}-private-${index(var.subnets.private, each.key)}"
     }
   )
+  depends_on = [data.aws_availability_zones.main]
 }
 
 resource "aws_security_group" "bastion" {
