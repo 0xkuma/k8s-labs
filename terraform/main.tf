@@ -14,11 +14,22 @@ module "role" {
   environment = var.environment
 }
 
-module "bastion" {
-  source = "./modules/ec2"
+module "elb" {
+  source = "./modules/elb/nlb"
 
   project     = var.project
   environment = var.environment
+  vpc_id      = module.vpc.vpc_id
+  subnet_ids  = module.vpc.public_subnets
+}
+
+module "bastion" {
+  source = "./modules/ec2"
+
+  project          = var.project
+  environment      = var.environment
+  lb_arn           = module.elb.aws_lb_arn
+  target_group_arn = module.elb.aws_lb_target_group_arn
   node = merge(
     var.bastion,
     {
@@ -48,8 +59,10 @@ module "bastion" {
 module "master" {
   source = "./modules/ec2"
 
-  project     = var.project
-  environment = var.environment
+  project          = var.project
+  environment      = var.environment
+  lb_arn           = module.elb.aws_lb_arn
+  target_group_arn = module.elb.aws_lb_target_group_arn
   node = merge(
     var.nodes.master,
     {
@@ -78,8 +91,10 @@ module "master" {
 module "worker" {
   source = "./modules/ec2"
 
-  project     = var.project
-  environment = var.environment
+  project          = var.project
+  environment      = var.environment
+  lb_arn           = module.elb.aws_lb_arn
+  target_group_arn = module.elb.aws_lb_target_group_arn
   node = merge(
     var.nodes.worker,
     {

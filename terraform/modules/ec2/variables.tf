@@ -6,6 +6,14 @@ variable "environment" {
   type = string
 }
 
+variable "lb_arn" {
+  type = string
+}
+
+variable "target_group_arn" {
+  type = string
+}
+
 variable "node" {
   type = object({
     num_instances               = number
