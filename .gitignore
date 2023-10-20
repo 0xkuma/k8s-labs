@@ -1,5 +1,5 @@
-# Created by https://www.toptal.com/developers/gitignore/api/certificates,terraform,ansible,ssh,macos,python
-# Edit at https://www.toptal.com/developers/gitignore?templates=certificates,terraform,ansible,ssh,macos,python
+# Created by https://www.toptal.com/developers/gitignore/api/ssh,macos,python,ansible,terraform,certificates,helm
+# Edit at https://www.toptal.com/developers/gitignore?templates=ssh,macos,python,ansible,terraform,certificates,helm
 
 ### Ansible ###
 *.retry
@@ -11,6 +11,10 @@
 *.cer
 *.der
 *.priv
+
+### Helm ###
+# Chart dependencies
+**/charts/*.tgz
 
 ### macOS ###
 # General
@@ -264,4 +268,4 @@ terraform.rc
 # Ignore tgz files
 *.tgz
 
-# End of https://www.toptal.com/developers/gitignore/api/certificates,terraform,ansible,ssh,macos,python
+# End of https://www.toptal.com/developers/gitignore/api/ssh,macos,python,ansible,terraform,certificates,helm
